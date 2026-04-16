@@ -486,6 +486,7 @@ async def reapply_style_coat_strict(
             "11. Keep tone formal, clear, and audience-friendly; do not sound like an academic abstract.\n",
             "12. If any requested style instruction conflicts with content lock, prioritize content lock.\n",
             "13. Preserve first-person speaker perspective — do not switch to third person.\n",
+            "14. Separate every paragraph with a blank line (two newlines). Never run paragraphs together.\n",
             "Return ONLY the fully rewritten speech text, no explanations.\n",
         ])
 
@@ -769,6 +770,7 @@ async def reapply_rhetoric_pass(
             "- Do NOT add new [ENN] markers that were not in the original\n",
             "- You MAY move a citation to the end of its reformatted sentence for natural flow\n",
             "- The REFERENCES section at the bottom must be preserved verbatim — copy it exactly\n\n",
+            "- Separate every paragraph with a blank line (two newlines). Never run paragraphs together.\n",
             "Return ONLY the fully rewritten speech. No preamble, no explanation.\n",
         ])
 
@@ -4726,6 +4728,7 @@ async def speechify_output(
             "Every fact, number, and finding you mention must come from the briefing paper below. "
             "You may paraphrase, combine, and give narrative colour — but do not hallucinate.\n\n",
 
+            "Separate every paragraph with a blank line (two newlines). Never run paragraphs together.\n",
             "Return ONLY the speech text. No preamble, no meta-commentary, no section labels.\n",
         ])
 
@@ -4781,7 +4784,7 @@ async def speechify_output(
             speech_text,
             flags=re.IGNORECASE,
         )
-        speech_text = re.sub(r'\s{2,}', ' ', speech_text).strip()
+        speech_text = re.sub(r'[ \t]{2,}', ' ', speech_text).strip()
 
         # Fix third-person speaker references
         if speaker_name and speaker_name != "the speaker":

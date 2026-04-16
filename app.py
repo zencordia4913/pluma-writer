@@ -28,6 +28,23 @@ import os
 logger = logging.getLogger("pluma.writer")
 
 
+def _speech_html(text: str, max_height: str = "560px") -> str:
+    """Convert plain speech text (paragraphs separated by \\n\\n) to a styled HTML block."""
+    import re
+    # Normalise: collapse 3+ newlines to 2, strip leading/trailing whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text.strip())
+    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+    # Within each paragraph, single newlines become <br>
+    escaped = [html.escape(p).replace('\n', '<br>') for p in paragraphs]
+    body = ''.join(f'<p style="margin:0 0 1.1rem 0">{p}</p>' for p in escaped)
+    return (
+        f'<div style="font-size:0.95rem;line-height:1.85;'
+        f'padding:1.2rem 1.5rem;border:1px solid rgba(49,51,63,0.15);'
+        f'border-radius:8px;max-height:{max_height};overflow-y:auto;">'
+        f'{body}</div>'
+    )
+
+
 def _sanitize_streamlit_theme_env_vars() -> list[str]:
     removed_keys: list[str] = []
     for key, value in list(os.environ.items()):
@@ -708,48 +725,16 @@ guidelines_summary = st.session_state.locals.get("guideline_summaries", {})
 selected_guidelines = []
 selected_guideline_names = []
 
-st.write(":blue[**Select Editorial Style Guides:**]")
+# All editorial style guidelines are selected automatically (UI hidden)
+selected_guidelines = []
+selected_guideline_names = []
 
-# Tooltip for guideline summary in the UI
-def render_guideline_checkbox(section_name: str, content: str, col_key_prefix: str):
-    default_checked = True
-    tooltip = guidelines_summary.get(section_name, None)  # one-sentence summary for hover
-    if st.checkbox(
-        section_name,
-        value=default_checked,
-        key=f"{col_key_prefix}_{section_name}",
-        help=tooltip  # <-- hover tooltip appears on the ⓘ icon and on hover
-    ):
+if guidelines:
+    for section_name, content in guidelines.items():
         selected_guidelines.append(content)
         selected_guideline_names.append(section_name)
-
-# Create a checkbox for each guideline section
-if guidelines:
-    with st.container(border=True):
-        # Create two columns
-        col1, col2 = st.columns(2)
-
-        # Split guidelines into two halves
-        guideline_items = list(guidelines.items())
-        mid_point = len(guideline_items) // 2
-
-        # First column
-        with col1:
-            for section_name, content in guideline_items[:mid_point]:
-                render_guideline_checkbox(section_name, content, "col1")
-                # default = section_name in ["COMMON GRAMMATICAL ERRORS", "WRITING LETTERS"]
-                # if st.checkbox(section_name, value=default, key=f"col1_{section_name}"):
-                #     selected_guidelines.append(content)
-
-        # Second column
-        with col2:
-            for section_name, content in guideline_items[mid_point:]:
-                render_guideline_checkbox(section_name, content, "col2")
-                # default = section_name in ["COMMON GRAMMATICAL ERRORS", "WRITING LETTERS"]
-                # if st.checkbox(section_name, value=default, key=f"col2_{section_name}"):
-                #     selected_guidelines.append(content)
 else:
-    st.warning("No guidelines available in the local data.")
+    pass  # No guidelines available
 
 # Join all selected guidelines with newlines and store in session state
 st.session_state.guidelines = "\n".join(selected_guidelines)
@@ -934,7 +919,9 @@ if "final_output_cache" in st.session_state:
         _speech_wc = len(_fo_speech.split())
         st.caption(f"Speech word count: **{_speech_wc}** words")
 
-        st.text_area("Final Speech Output", _fo_speech, height=500, key="final_speech_display")
+        st.markdown(_speech_html(_fo_speech), unsafe_allow_html=True)
+        with st.expander("📋 Copy raw text", expanded=False):
+            st.text_area("Raw Speech Text", _fo_speech, height=300, key="final_speech_raw", label_visibility="collapsed")
 
         # Download buttons for the speech version
         _speech_docx = make_docx_bytes(_fo_speech, title=f"Speech - {_fo_speaker}")
@@ -1983,7 +1970,7 @@ if st.button(
                     
                     # Show expandable full output
                     with st.expander("📄 View Generated Styled Output", expanded=True):
-                        st.text_area("Styled Output:", styled_output, height=300, disabled=True, label_visibility="collapsed")
+                        st.markdown(_speech_html(styled_output, max_height="420px"), unsafe_allow_html=True)
             
             # Restore original print
             builtins.print = original_print
@@ -2219,7 +2206,7 @@ if st.button(
                 
                 # Preview
                 with st.expander("📖 Styled Output Preview (first 1000 chars)", expanded=False):
-                    st.text_area("Preview", styled_text[:1000] + ("\n... (truncated)" if len(styled_text) > 1000 else ""), height=300, disabled=True)
+                    st.markdown(_speech_html(styled_text[:1000] + ("\n… (truncated)" if len(styled_text) > 1000 else ""), max_height="320px"), unsafe_allow_html=True)
             
             st.markdown("---")
             
@@ -2360,7 +2347,9 @@ if st.button(
                 styled_result = results.get("styled_output", {})
                 if styled_result.get("success"):
                     styled_text = styled_result.get("styled_output", "")
-                    st.text_area("Styled Speech", styled_text, height=400, key="styled_display")
+                    st.markdown(_speech_html(styled_text), unsafe_allow_html=True)
+                    with st.expander("📋 Copy raw text", expanded=False):
+                        st.text_area("Styled Speech", styled_text, height=300, key="styled_display", label_visibility="collapsed")
                     
                     # Download buttons
                     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -2393,7 +2382,9 @@ if st.button(
                 apa_result = results.get("styled_output_apa", {})
                 if apa_result.get("success"):
                     apa_text = apa_result.get("apa_output", "")
-                    st.text_area("APA Format Speech", apa_text, height=400, key="apa_display")
+                    st.markdown(_speech_html(apa_text), unsafe_allow_html=True)
+                    with st.expander("📋 Copy raw text", expanded=False):
+                        st.text_area("APA Format Speech", apa_text, height=300, key="apa_display", label_visibility="collapsed")
                     
                     # Download buttons
                     ts = datetime.now().strftime("%Y%m%d-%H%M%S")

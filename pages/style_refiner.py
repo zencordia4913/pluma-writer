@@ -570,48 +570,16 @@ guidelines_summary = st.session_state.locals.get("guideline_summaries", {})
 selected_guidelines = []
 selected_guideline_names = []
 
-st.write(":blue[**Select Editorial Style Guides:**]")
+# All editorial style guidelines are selected automatically (UI hidden)
+selected_guidelines = []
+selected_guideline_names = []
 
-# Tooltip for guideline summary in the UI
-def render_guideline_checkbox(section_name: str, content: str, col_key_prefix: str):
-    default_checked = True
-    tooltip = guidelines_summary.get(section_name, None)  # one-sentence summary for hover
-    if st.checkbox(
-        section_name,
-        value=default_checked,
-        key=f"{col_key_prefix}_refiner_{section_name}",
-        help=tooltip  # <-- hover tooltip appears on the ⓘ icon and on hover
-    ):
+if guidelines:
+    for section_name, content in guidelines.items():
         selected_guidelines.append(content)
         selected_guideline_names.append(section_name)
-
-# Create a checkbox for each guideline section
-if guidelines:
-    with st.container(border=True):
-        # Create two columns
-        col1, col2 = st.columns(2)
-
-        # Split guidelines into two halves
-        guideline_items = list(guidelines.items())
-        mid_point = len(guideline_items) // 2
-
-        # First column
-        with col1:
-            for section_name, content in guideline_items[:mid_point]:
-                render_guideline_checkbox(section_name, content, "col1")
-                # default = section_name in ["COMMON GRAMMATICAL ERRORS", "WRITING LETTERS"]
-                # if st.checkbox(section_name, value=default, key=f"col1_{section_name}"):
-                #     selected_guidelines.append(content)
-
-        # Second column
-        with col2:
-            for section_name, content in guideline_items[mid_point:]:
-                render_guideline_checkbox(section_name, content, "col2")
-                # default = section_name in ["COMMON GRAMMATICAL ERRORS", "WRITING LETTERS"]
-                # if st.checkbox(section_name, value=default, key=f"col2_{section_name}"):
-                #     selected_guidelines.append(content)
 else:
-    st.warning("No guidelines available in the local data.")
+    pass  # No guidelines available
 
 # Join all selected guidelines with newlines and store in session state
 st.session_state.guidelines = "\n".join(selected_guidelines)
