@@ -161,6 +161,8 @@ async def generate_query(state: SummaryState, notify: Notifier = None):
     return {"search_query": rq, "rationale": rationale}
 
 async def web_research(state: SummaryState, notify: Notifier = None):
+    import logging as _logging
+    _logger = _logging.getLogger("pluma.deep_research")
     tavily_client = AsyncTavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
     try:
         # Tavily rejects queries longer than 400 characters
@@ -182,9 +184,29 @@ async def web_research(state: SummaryState, notify: Notifier = None):
             "web_research_results": [search_str],
             "images": (state.images or []) + images,
         }
+    except Exception as tavily_exc:
+        # Tavily is unreachable (403/ForbiddenError from cloud IP blocks, quota exhausted, etc.)
+        # Return a graceful empty result so the graph can still run summarize/finalize
+        # using whatever context was already gathered.
+        _logger.warning(
+            "Tavily web search failed (query='%s'): %s — continuing without web results.",
+            (state.search_query or state.research_topic)[:80],
+            tavily_exc,
+        )
+        if notify:
+            await notify("web_research", {"sources": [], "images": [], "error": str(tavily_exc)})
+        return {
+            "sources_gathered": [],
+            "research_loop_count": state.research_loop_count + 1,
+            "web_research_results": [f"[Web search unavailable: {tavily_exc}]"],
+            "images": state.images or [],
+        }
     finally:
         # Close the client to avoid unclosed session warnings
-        await tavily_client.close()
+        try:
+            await tavily_client.close()
+        except Exception:
+            pass
 
 async def summarize_sources(state: SummaryState, notify: Notifier = None):
     existing = state.running_summary
@@ -306,19 +328,40 @@ def setup_graph(notify: Notifier = None):        # ✅ accept notify here
     builder.add_edge("finalize_summary", END)
     return builder.compile()
 
-async def run_deep_research(topic: str, notify: Notifier = None) -> str:
+async def run_deep_research(topic: str, notify: Notifier = None, return_state: bool = False):
+    """Run the deep research graph.
+
+    Args:
+        topic: Research topic string.
+        notify: Optional async progress callback.
+        return_state: When True, return a dict with full graph state instead of
+            just the summary string.  The dict has keys:
+                summary (str), sources_gathered (list[str]),
+                research_loop_count (int), final_knowledge_gap (str).
+
+    Returns:
+        str when return_state=False (default), dict when return_state=True.
+    """
     import logging
     _logger = logging.getLogger("pluma.deep_research")
     try:
         graph = setup_graph(notify=notify)    # ✅ pass notify into setup_graph
 
-        # Option A: just run once and return result (simplest)
         result = await graph.ainvoke({"research_topic": topic, "images": []})
         summary = result.get("running_summary", "")
         if not summary or not summary.strip():
             _logger.warning("Deep research returned empty summary for topic: %s", topic[:120])
+        if return_state:
+            return {
+                "summary": summary,
+                "sources_gathered": result.get("sources_gathered", []),
+                "research_loop_count": result.get("research_loop_count", 0),
+                "final_knowledge_gap": result.get("knowledge_gap", ""),
+            }
         return summary
     except Exception as e:
         _logger.error("Deep research pipeline failed for topic '%s': %s", topic[:120], e, exc_info=True)
+        if return_state:
+            return {"summary": "", "sources_gathered": [], "research_loop_count": 0, "final_knowledge_gap": ""}
         return ""
 

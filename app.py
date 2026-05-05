@@ -1116,6 +1116,11 @@ if st.button(
 
         def worker():
             try:
+                # Reload .env so that any keys updated while the app is running
+                # (e.g. a fresh TAVILY_API_KEY) are picked up without a restart.
+                from dotenv import load_dotenv as _load_dotenv
+                _load_dotenv(override=True)
+
                 import builtins
                 current_stage = 0
 
@@ -1569,7 +1574,10 @@ if st.button(
                 logger.warning("Pipeline produced no output and no error details for query '%s'",
                                user_query[:120] if user_query else "(empty)")
 
-        st.rerun()
+        # Only rerun when we have cached output to show — otherwise the stage
+        # cards and error messages would be wiped immediately.
+        if "final_output_cache" in st.session_state:
+            st.rerun()
         
         # Create stage placeholders
         st.markdown("### 🔄 Writer Pipeline Running...")
