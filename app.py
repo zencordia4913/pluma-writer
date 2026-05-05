@@ -28,6 +28,23 @@ import os
 logger = logging.getLogger("pluma.writer")
 
 
+def _speech_html(text: str, max_height: str = "560px") -> str:
+    """Convert plain speech text (paragraphs separated by \\n\\n) to a styled HTML block."""
+    import re
+    # Normalise: collapse 3+ newlines to 2, strip leading/trailing whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text.strip())
+    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+    # Within each paragraph, single newlines become <br>
+    escaped = [html.escape(p).replace('\n', '<br>') for p in paragraphs]
+    body = ''.join(f'<p style="margin:0 0 1.1rem 0">{p}</p>' for p in escaped)
+    return (
+        f'<div style="font-size:0.95rem;line-height:1.85;'
+        f'padding:1.2rem 1.5rem;border:1px solid rgba(49,51,63,0.15);'
+        f'border-radius:8px;max-height:{max_height};overflow-y:auto;">'
+        f'{body}</div>'
+    )
+
+
 def _sanitize_streamlit_theme_env_vars() -> list[str]:
     removed_keys: list[str] = []
     for key, value in list(os.environ.items()):
@@ -708,48 +725,16 @@ guidelines_summary = st.session_state.locals.get("guideline_summaries", {})
 selected_guidelines = []
 selected_guideline_names = []
 
-st.write(":blue[**Select Editorial Style Guides:**]")
+# All editorial style guidelines are selected automatically (UI hidden)
+selected_guidelines = []
+selected_guideline_names = []
 
-# Tooltip for guideline summary in the UI
-def render_guideline_checkbox(section_name: str, content: str, col_key_prefix: str):
-    default_checked = True
-    tooltip = guidelines_summary.get(section_name, None)  # one-sentence summary for hover
-    if st.checkbox(
-        section_name,
-        value=default_checked,
-        key=f"{col_key_prefix}_{section_name}",
-        help=tooltip  # <-- hover tooltip appears on the ⓘ icon and on hover
-    ):
+if guidelines:
+    for section_name, content in guidelines.items():
         selected_guidelines.append(content)
         selected_guideline_names.append(section_name)
-
-# Create a checkbox for each guideline section
-if guidelines:
-    with st.container(border=True):
-        # Create two columns
-        col1, col2 = st.columns(2)
-
-        # Split guidelines into two halves
-        guideline_items = list(guidelines.items())
-        mid_point = len(guideline_items) // 2
-
-        # First column
-        with col1:
-            for section_name, content in guideline_items[:mid_point]:
-                render_guideline_checkbox(section_name, content, "col1")
-                # default = section_name in ["COMMON GRAMMATICAL ERRORS", "WRITING LETTERS"]
-                # if st.checkbox(section_name, value=default, key=f"col1_{section_name}"):
-                #     selected_guidelines.append(content)
-
-        # Second column
-        with col2:
-            for section_name, content in guideline_items[mid_point:]:
-                render_guideline_checkbox(section_name, content, "col2")
-                # default = section_name in ["COMMON GRAMMATICAL ERRORS", "WRITING LETTERS"]
-                # if st.checkbox(section_name, value=default, key=f"col2_{section_name}"):
-                #     selected_guidelines.append(content)
 else:
-    st.warning("No guidelines available in the local data.")
+    pass  # No guidelines available
 
 # Join all selected guidelines with newlines and store in session state
 st.session_state.guidelines = "\n".join(selected_guidelines)
@@ -840,7 +825,7 @@ def make_pdf_bytes(text: str, title: str | None = None) -> bytes:
 or_header("Pipeline Stage Configuration")
 
 st.markdown(":blue[**Select which pipeline stages to run:**]")
-st.caption("Stages 1–3 are required for any output. Stages 4–7 are optional post-processing stages.")
+st.caption("Stages 1–3 are required for any output. Stages 4–8 are optional post-processing stages.")
 
 with st.container(border=True):
     col_core, col_optional = st.columns(2)
@@ -858,6 +843,8 @@ with st.container(border=True):
                     help="Check the output for potential plagiarism against online sources")
         st.checkbox("Stage 7: BSP Policy Alignment", value=True, key="stage_toggle_7",
                     help="Verify alignment with BSP communication policies")
+        st.checkbox("Stage 8: Speechify — Final Speech", value=True, key="stage_toggle_8",
+                    help="Transform the literature review into a delivered speech with rhetoric, metaphors, humour, and narrative arc")
 
 
 
@@ -872,9 +859,11 @@ if "final_output_cache" in st.session_state:
     _fo_pdf = _cache["pdf_bytes"]
     _fo_base = _cache["base_name"]
     _fo_speaker = _cache["speaker"]
+    _fo_speech = _cache.get("speech_text", "")
 
     st.markdown("---")
-    st.markdown("### 📝 Final Output")
+    st.markdown("### 📄 Literature Review")
+    st.caption("Structured evidence summary with citations — the research foundation for the speech")
 
     # Split body and references for separate display
     _ref_m = _re_persist.search(r'\n(?:=+\n)?\s*REFERENCES\s*\n(?:=+\n)?', _fo_text, flags=_re_persist.IGNORECASE)
@@ -890,7 +879,7 @@ if "final_output_cache" in st.session_state:
     _body_stripped = _re_persist.sub(r'\[E\d+(?:,E\d+)*\]', '', _body_stripped)
     _wc = len(_body_stripped.split())
     _tw = int(st.session_state.get("max_words", 1000))
-    st.caption(f"Speech word count: **{_wc}** words (target: {_tw})")
+    st.caption(f"Word count: **{_wc}** words (target: {_tw})")
 
     st.text_area(_fo_label, _fo_body, height=420, key="final_output_display")
 
@@ -920,6 +909,42 @@ if "final_output_cache" in st.session_state:
             use_container_width=True,
             key="download_final_pdf",
         )
+
+    # --- Final Speech Output (Stage 8 Speechify result) ---
+    if _fo_speech:
+        st.markdown("---")
+        st.markdown("### 🎤 Final Speech Output")
+        st.caption("Free-composition speech — rhetoric, audience address, metaphors, humour, narrative arc. No inline citations.")
+
+        _speech_wc = len(_fo_speech.split())
+        st.caption(f"Speech word count: **{_speech_wc}** words")
+
+        st.markdown(_speech_html(_fo_speech), unsafe_allow_html=True)
+        with st.expander("📋 Copy raw text", expanded=False):
+            st.text_area("Raw Speech Text", _fo_speech, height=300, key="final_speech_raw", label_visibility="collapsed")
+
+        # Download buttons for the speech version
+        _speech_docx = make_docx_bytes(_fo_speech, title=f"Speech - {_fo_speaker}")
+        _speech_pdf = make_pdf_bytes(_fo_speech, title=f"Speech - {_fo_speaker}")
+        _sp_col_d, _sp_col_p = st.columns(2)
+        with _sp_col_d:
+            st.download_button(
+                "⬇️ Download Speech DOCX",
+                data=_speech_docx,
+                file_name=f"{_fo_base}_speech.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                key="download_speech_docx",
+            )
+        with _sp_col_p:
+            st.download_button(
+                "⬇️ Download Speech PDF",
+                data=_speech_pdf,
+                file_name=f"{_fo_base}_speech.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="download_speech_pdf",
+            )
 
 
 if st.button(
@@ -980,12 +1005,13 @@ if st.button(
             4: "Verifying Citations",
             5: "Converting to APA Format",
             6: "Plagiarism Detection",
-            7: "BSP Policy Alignment Check"
+            7: "BSP Policy Alignment Check",
+            8: "Speechify — Final Speech",
         }
 
         # Determine enabled stages from user toggles
         enabled_stages = set()
-        for i in range(1, 8):
+        for i in range(1, 9):
             if i <= 3 or i == 5 or st.session_state.get(f"stage_toggle_{i}", True):
                 enabled_stages.add(i)
 
@@ -998,10 +1024,10 @@ if st.button(
                 "initial_output_preview": "",
                 "generated_output": "",
             }
-            for i in range(1, 8)
+            for i in range(1, 9)
         }
 
-        stage_placeholders = {i: st.empty() for i in range(1, 8)}
+        stage_placeholders = {i: st.empty() for i in range(1, 9)}
         event_queue = queue.Queue()
         result_holder = {"results": None, "error": None, "traceback": None}
 
@@ -1079,7 +1105,7 @@ if st.button(
                     st.code(state["generated_output"], language=None)
 
         def render_all_stages():
-            for i in range(1, 8):
+            for i in range(1, 9):
                 render_stage(i)
 
         # Iterations are now selected automatically inside the writer pipeline
@@ -1090,6 +1116,11 @@ if st.button(
 
         def worker():
             try:
+                # Reload .env so that any keys updated while the app is running
+                # (e.g. a fresh TAVILY_API_KEY) are picked up without a restart.
+                from dotenv import load_dotenv as _load_dotenv
+                _load_dotenv(override=True)
+
                 import builtins
                 current_stage = 0
 
@@ -1304,10 +1335,11 @@ if st.button(
 
         def render_overall_progress():
             completed_count = sum(
-                1 for i in range(1, 8)
+                1 for i in range(1, 9)
                 if stage_store[i]["status"] in ("complete", "skipped")
             )
-            pct = int((completed_count / 7) * 100)
+            pct = int((completed_count / max(total_enabled, 1)) * 100)
+            pct = min(pct, 100)
             bar_color = "#198754" if pct == 100 else "#0d6efd"
             overall_progress_placeholder.markdown(
                 f'**Overall Pipeline Progress: {completed_count}/{total_enabled} stages**'
@@ -1361,7 +1393,7 @@ if st.button(
                 elif event_type == "pipeline_complete":
                     results = event.get("results") or {}
                     result_holder["results"] = results
-                    for i in range(1, 8):
+                    for i in range(1, 9):
                         if stage_store[i]["status"] not in ("error", "skipped"):
                             stage_store[i]["status"] = "complete"
 
@@ -1411,7 +1443,7 @@ if st.button(
                     result_holder["error"] = event.get("error", "Unknown pipeline error")
                     result_holder["traceback"] = event.get("traceback")
                     # Mark current incomplete stages as error
-                    for i in range(1, 8):
+                    for i in range(1, 9):
                         if stage_store[i]["status"] in ["pending", "running"]:
                             stage_store[i]["status"] = "error"
 
@@ -1453,6 +1485,12 @@ if st.button(
         else:
             final_output_text = final_summary.get("summary", "") if isinstance(final_summary, dict) else ""
             output_label = "Final Summary (Fallback)"
+
+        # Extract the speechified final speech (Stage 8)
+        _speechify_payload = results.get("speechify_result") if isinstance(results, dict) else None
+        speech_final_text = ""
+        if isinstance(_speechify_payload, dict) and _speechify_payload.get("success") and _speechify_payload.get("speech"):
+            speech_final_text = _speechify_payload["speech"]
 
         if final_output_text:
             _speaker = st.session_state.get("selected_speaker_input", "Speaker")
@@ -1508,6 +1546,7 @@ if st.button(
             # Cache in session state for persistent rendering across reruns
             st.session_state["final_output_cache"] = {
                 "text": final_output_text,
+                "speech_text": speech_final_text,
                 "label": output_label,
                 "docx_bytes": _docx_bytes,
                 "pdf_bytes": _pdf_bytes,
@@ -1535,7 +1574,10 @@ if st.button(
                 logger.warning("Pipeline produced no output and no error details for query '%s'",
                                user_query[:120] if user_query else "(empty)")
 
-        st.rerun()
+        # Only rerun when we have cached output to show — otherwise the stage
+        # cards and error messages would be wiped immediately.
+        if "final_output_cache" in st.session_state:
+            st.rerun()
         
         # Create stage placeholders
         st.markdown("### 🔄 Writer Pipeline Running...")
@@ -1936,7 +1978,7 @@ if st.button(
                     
                     # Show expandable full output
                     with st.expander("📄 View Generated Styled Output", expanded=True):
-                        st.text_area("Styled Output:", styled_output, height=300, disabled=True, label_visibility="collapsed")
+                        st.markdown(_speech_html(styled_output, max_height="420px"), unsafe_allow_html=True)
             
             # Restore original print
             builtins.print = original_print
@@ -2172,7 +2214,7 @@ if st.button(
                 
                 # Preview
                 with st.expander("📖 Styled Output Preview (first 1000 chars)", expanded=False):
-                    st.text_area("Preview", styled_text[:1000] + ("\n... (truncated)" if len(styled_text) > 1000 else ""), height=300, disabled=True)
+                    st.markdown(_speech_html(styled_text[:1000] + ("\n… (truncated)" if len(styled_text) > 1000 else ""), max_height="320px"), unsafe_allow_html=True)
             
             st.markdown("---")
             
@@ -2313,7 +2355,9 @@ if st.button(
                 styled_result = results.get("styled_output", {})
                 if styled_result.get("success"):
                     styled_text = styled_result.get("styled_output", "")
-                    st.text_area("Styled Speech", styled_text, height=400, key="styled_display")
+                    st.markdown(_speech_html(styled_text), unsafe_allow_html=True)
+                    with st.expander("📋 Copy raw text", expanded=False):
+                        st.text_area("Styled Speech", styled_text, height=300, key="styled_display", label_visibility="collapsed")
                     
                     # Download buttons
                     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -2346,7 +2390,9 @@ if st.button(
                 apa_result = results.get("styled_output_apa", {})
                 if apa_result.get("success"):
                     apa_text = apa_result.get("apa_output", "")
-                    st.text_area("APA Format Speech", apa_text, height=400, key="apa_display")
+                    st.markdown(_speech_html(apa_text), unsafe_allow_html=True)
+                    with st.expander("📋 Copy raw text", expanded=False):
+                        st.text_area("APA Format Speech", apa_text, height=300, key="apa_display", label_visibility="collapsed")
                     
                     # Download buttons
                     ts = datetime.now().strftime("%Y%m%d-%H%M%S")

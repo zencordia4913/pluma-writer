@@ -206,15 +206,15 @@ def _render_schema_fields(node: dict, path: list[str], data_root=None):
 
     label = _format_section_title(path[-1])
     if node_type == "array":
-        st.text_area(label, key=state_key, height=140, help="One item per line", disabled=True)
+        st.text_area(label, key=state_key, height=140, help="One item per line")
     elif node_type in ["integer", "number"]:
         try:
             current_val = float(st.session_state[state_key])
         except Exception:
             current_val = 0.0
-        st.number_input(label, value=current_val, step=1.0 if node_type == "integer" else 0.1, disabled=True)
+        st.number_input(label, value=current_val, step=1.0 if node_type == "integer" else 0.1)
     else:
-        st.text_area(label, key=state_key, height=90, disabled=True)
+        st.text_area(label, key=state_key, height=90)
 
 
 def _update_schema_from_state(node: dict, path: list[str]):
@@ -317,7 +317,7 @@ def _extract_rulebook_id(doc: dict):
 pages.show_home()
 pages.show_sidebar()
 
-st.header("✏️Style Rules (Read-Only)")
+st.header("✏️Style Rules")
 
 st.markdown(
     """
@@ -414,7 +414,7 @@ if selected_speaker and selected_audience:
     with spacer_col:
         st.write("")
     with action_col:
-        pass
+        st.write("")
     style_schema = _coerce_style_schema(selected_doc)
     if not isinstance(style_schema, dict) or not style_schema:
         st.warning("This style has no editable style schema.")
@@ -455,14 +455,13 @@ if selected_speaker and selected_audience:
                     key=section_key,
                     height=160 if value_section_types[section] != "text" else 120,
                     help="Use one item per line for lists; use JSON for objects.",
-                    disabled=True,
                 )
     else:
         st.warning("This style has no editable sections.")
         st.stop()
 
 
-    if False:
+    if st.button("💾 Save Style Rules", key="save_style_btn", type="primary"):
         new_doc = dict(selected_doc)
         if has_schema_sections:
             new_schema = json.loads(json.dumps(style_schema))
@@ -530,12 +529,11 @@ if available_rulebook_ids:
                     key=state_key,
                     height=160 if value_type != "text" else 120,
                     help="Use one item per line for lists; use JSON for objects.",
-                    disabled=True,
                 )
     else:
         st.info("No global settings found for this rulebook.")
 
-    if False and rulebook:
+    if rulebook and st.button("💾 Save Global Settings", key="save_rulebook_btn", type="primary"):
         updated_sections = {}
         rulebook_saved = True
         for section, value in rulebook_sections.items():
